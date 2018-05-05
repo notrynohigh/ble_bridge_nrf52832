@@ -63,6 +63,7 @@
 #include "nrf_log_default_backends.h"
 
 #include "b_tp.h"
+#include "tool_cmd.h"
 
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< A tag that refers to the BLE stack configuration we set with @ref sd_ble_cfg_set. Default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< Application's BLE observer priority. You shoulnd't need to modify this value. */
@@ -709,6 +710,8 @@ uint16_t uart_rec_buff(uint8_t *pbuf, uint16_t len)
 APP_TIMER_DEF(utimer_20ms_id);
 #define UART_RX_LEN         256
 static uint8_t urx_table[UART_RX_LEN];
+#define UTIMER_20MS_INTERVAL    APP_TIMER_TICKS(20)
+
 static void _timer_20ms_handler(void *parg)
 {
     uint16_t len = 0;
@@ -718,21 +721,23 @@ static void _timer_20ms_handler(void *parg)
     {
         s_len += len;
     }
-    else 
+    else if(s_len > 0)
     {
         b_tp_receive_data(urx_table, s_len);
         s_len = 0;
     }
+    uint32_t err_code = app_timer_start(utimer_20ms_id, UTIMER_20MS_INTERVAL, NULL);
+    APP_ERROR_CHECK(err_code);    
 }
 
 static void user_timer_init()
 {
 	uint32_t err_code;
-    err_code = app_timer_create(&utimer_20ms_id, APP_TIMER_MODE_REPEATED, _timer_20ms_handler);
+    err_code = app_timer_create(&utimer_20ms_id, APP_TIMER_MODE_SINGLE_SHOT, _timer_20ms_handler);
     APP_ERROR_CHECK(err_code);
 }
 
-#define UTIMER_20MS_INTERVAL    APP_TIMER_TICKS(20)
+
 static void user_timer_start()
 {
 	uint32_t err_code;
@@ -745,9 +750,14 @@ static void user_timer_start()
 /**
  * @proto
  */
+
+uint8_t tmp_table[256];
+uint32_t tmp_len = 0;
+
 void b_tp_callback(b_TPU8 *pbuf, b_TPU32 len)
 {
-    uart_send_buff(pbuf, len);
+    memcpy(tmp_table, pbuf, len);
+    tmp_len = len;
 }
 
 int main(void)
@@ -762,19 +772,25 @@ int main(void)
     db_discovery_init();
     ble_stack_init();
     gatt_init();
-    nus_c_init();
+//    nus_c_init();
     
     // Start scanning for peripherals and initiate connection
     // with devices that advertise NUS UUID.
-    printf("BLE UART central example started.\r\n");
-    NRF_LOG_INFO("BLE UART central example started.");
-    scan_start();
+//    printf("BLE UART central example started.\r\n");
+//    NRF_LOG_INFO("BLE UART central example started.");
+//    scan_start();
     user_timer_start();
+    uart_send_string((uint8_t *)"hello world");
     for (;;)
     {
         if (NRF_LOG_PROCESS() == false)
         {
             nrf_pwr_mgmt_run();
+        }
+        if(tmp_len != 0)
+        {
+            tc_parse(tmp_table, tmp_len);
+            tmp_len = 0;
         }
     }
 }

@@ -34,9 +34,14 @@
  * @{
  */
 
+extern void uart_send_buff(uint8_t *, uint16_t );
 
 b_tp_err_code_t b_tp_port_send(uint8_t *pbuf, uint32_t len)
 {
+    if(len <= 20)
+    {
+        uart_send_buff(pbuf, len);
+    }
     return B_TP_SUCCESS;
 }
 
