@@ -2,11 +2,6 @@
 #include "b_tp.h"
 #include "string.h"
 
-
-
-
-
-
 void tc_send(uint8_t cmd, uint8_t status, uint8_t *pbuf, uint32_t len)
 {
     uint8_t tmp_buf[256];
@@ -22,19 +17,7 @@ void tc_send(uint8_t cmd, uint8_t status, uint8_t *pbuf, uint32_t len)
 }
 
 
-void tc_parse(uint8_t *pbuf, uint32_t len)
-{
-    tcmd_struct_t *pstruct = (tcmd_struct_t *)pbuf;
-    switch(pstruct->cmd)
-    {
-        case TCMD_SCAN:
-        tc_send(TCMD_SCAN, 0, NULL, 0);    
-        break;
-        default:
-        tc_send(TCMD_UNKNOW, 0, NULL, 0);
-        break;
-    }
-}
+
 
 
 

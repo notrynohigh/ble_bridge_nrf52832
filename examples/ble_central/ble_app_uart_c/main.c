@@ -95,6 +95,14 @@ BLE_DB_DISCOVERY_DEF(m_db_disc);                                        /**< DB 
 
 static uint16_t m_ble_nus_max_data_len = BLE_GATT_ATT_MTU_DEFAULT - OPCODE_LENGTH - HANDLE_LENGTH; /**< Maximum length of data (in bytes) that can be transmitted to the peer by the Nordic UART service module. */
 
+
+/**@brief Variable length data encapsulation in terms of length and pointer to data. */
+typedef struct
+{
+    uint8_t * p_data;   /**< Pointer to data. */
+    uint16_t  data_len; /**< Length of data. */
+} data_t;
+
 /**@brief Connection parameters requested for connection. */
 static ble_gap_conn_params_t const m_connection_param =
 {
@@ -156,6 +164,16 @@ static void scan_start(void)
     ret = bsp_indication_set(BSP_INDICATE_SCANNING);
     APP_ERROR_CHECK(ret);
 }
+
+static void scan_stop(void)
+{
+    ret_code_t ret;
+
+    ret = sd_ble_gap_scan_stop();
+    APP_ERROR_CHECK(ret);
+
+}
+
 
 
 /**@brief Function for handling database discovery events.
@@ -395,6 +413,40 @@ static bool is_uuid_present(ble_uuid_t               const * p_target_uuid,
     return false;
 }
 
+/**
+ * @brief Parses advertisement data, providing length and location of the field in case
+ *        matching data is found.
+ *
+ * @param[in]  type       Type of data to be looked for in advertisement data.
+ * @param[in]  p_advdata  Advertisement report length and pointer to report.
+ * @param[out] p_typedata If data type requested is found in the data report, type data length and
+ *                        pointer to data will be populated here.
+ *
+ * @retval NRF_SUCCESS if the data type is found in the report.
+ * @retval NRF_ERROR_NOT_FOUND if the data type could not be found.
+ */
+static uint32_t adv_report_parse(uint8_t type, data_t * p_advdata, data_t * p_typedata)
+{
+    uint32_t  index = 0;
+    uint8_t * p_data;
+
+    p_data = p_advdata->p_data;
+
+    while (index < p_advdata->data_len)
+    {
+        uint8_t field_length = p_data[index];
+        uint8_t field_type   = p_data[index + 1];
+
+        if (field_type == type)
+        {
+            p_typedata->p_data   = &p_data[index + 2];
+            p_typedata->data_len = field_length - 1;
+            return NRF_SUCCESS;
+        }
+        index += field_length + 1;
+    }
+    return NRF_ERROR_NOT_FOUND;
+}
 
 /**@brief Function for handling BLE events.
  *
@@ -404,15 +456,36 @@ static bool is_uuid_present(ble_uuid_t               const * p_target_uuid,
 static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 {
     ret_code_t            err_code;
+    data_t                adv_data;
+    data_t                dev_name;
     ble_gap_evt_t const * p_gap_evt = &p_ble_evt->evt.gap_evt;
 
     switch (p_ble_evt->header.evt_id)
     {
         case BLE_GAP_EVT_ADV_REPORT:
         {
-//            ble_gap_evt_adv_report_t const * p_adv_report = &p_gap_evt->params.adv_report;
-//            
-//            
+            ble_gap_evt_adv_report_t const * p_adv_report = &p_gap_evt->params.adv_report;
+            pro_scan_response_t scan_resp;
+            memset(&scan_resp, 0, sizeof(scan_resp));
+            // For readibility.
+            ble_gap_evt_t  const * p_gap_evt  = &p_ble_evt->evt.gap_evt;
+
+            // Initialize advertisement report for parsing
+            adv_data.p_data   = (uint8_t *)p_gap_evt->params.adv_report.data;
+            adv_data.data_len = p_gap_evt->params.adv_report.dlen;
+
+            // Search for advertising names.
+            bool name_found = false;
+            err_code = adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, &adv_data, &dev_name);            
+            if(err_code == NRF_ERROR_NOT_FOUND)
+            {
+                break;
+            }
+            scan_resp.rssi = p_adv_report->rssi;
+            memcpy(scan_resp.addr, p_adv_report->peer_addr.addr, sizeof(scan_resp.addr));
+            memcpy(scan_resp.name, dev_name.p_data, (dev_name.data_len > DEVICE_NAME_MAX_LEN) ? DEVICE_NAME_MAX_LEN : dev_name.data_len);
+            tc_send(CMD_TOOL_SCAN, 0, (uint8_t *)&scan_resp, sizeof(pro_scan_response_t));
+            
         }break; // BLE_GAP_EVT_ADV_REPORT
 
         case BLE_GAP_EVT_CONNECTED:
@@ -715,6 +788,7 @@ static uint8_t urx_table[UART_RX_LEN];
 static void _timer_20ms_handler(void *parg)
 {
     uint16_t len = 0;
+    uint32_t i = 0;
     static uint16_t s_len = 0;
     len = uart_rec_buff(&urx_table[s_len], UART_RX_LEN - s_len);
     if(len > 0)
@@ -722,8 +796,22 @@ static void _timer_20ms_handler(void *parg)
         s_len += len;
     }
     else if(s_len > 0)
-    {
-        b_tp_receive_data(urx_table, s_len);
+    {   
+        if(s_len <= B_TP_MTU)
+        {
+            b_tp_receive_data(urx_table, s_len);
+        }
+        else
+        {
+            for(i = 0;i < (s_len / B_TP_MTU); i++)
+            {
+                b_tp_receive_data(&urx_table[i * B_TP_MTU], B_TP_MTU);
+            }
+            if(s_len % B_TP_MTU)
+            {
+                b_tp_receive_data(&urx_table[i * B_TP_MTU], (s_len % B_TP_MTU));
+            }
+        }        
         s_len = 0;
     }
     uint32_t err_code = app_timer_start(utimer_20ms_id, UTIMER_20MS_INTERVAL, NULL);
@@ -752,14 +840,77 @@ static void user_timer_start()
  */
 
 uint8_t tmp_table[256];
-uint32_t tmp_len = 0;
+uint8_t tmp_flag = 0;
+tcmd_pstruct_t rec_result;
+
 
 void b_tp_callback(b_TPU8 *pbuf, b_TPU32 len)
 {
-    memcpy(tmp_table, pbuf, len);
-    tmp_len = len;
+    tcmd_struct_t *ptmp = (tcmd_struct_t *)pbuf;
+    uint8_t off = STRUCT_OFF(tcmd_struct_t, buf);
+    if(len < off)
+    {
+        return;
+    }
+    rec_result.cmd = ptmp->cmd;
+    rec_result.status = ptmp->status;
+    memcpy(tmp_table, ptmp->buf, len - off);
+    if(len == off)
+    {
+        rec_result.pbuf = NULL;
+    }
+    else
+    {
+        rec_result.pbuf = tmp_table;
+    }
+    tmp_flag = 1;
 }
 
+/*************************************************************************************/
+
+void tc_scan(uint8_t *pbuf)
+{
+    static uint8_t scan_flag = 0;
+    pro_scan_require_t *ptmp = (pro_scan_require_t *)pbuf;
+    if(pbuf == NULL)
+    {
+        return;
+    }
+    if(ptmp->type == 0)
+    {
+        if(scan_flag == 1)
+        {
+            scan_stop();
+            scan_flag = 0;
+        }
+    }
+    else
+    {
+        if(scan_flag == 0)
+        {
+            scan_start();
+            scan_flag = 1;
+        }
+    }
+}
+
+
+void tc_parse(tcmd_pstruct_t result)
+{
+    switch(result.cmd)
+    {
+        case CMD_TOOL_SCAN:
+            tc_scan(result.pbuf); 
+            break;
+        default:
+            tc_send(result.cmd, CMD_STATUS_UNKNOWN, NULL, 0);
+            break;
+    }
+}
+
+
+
+/*************************************************************************************/
 int main(void)
 {
     log_init();
@@ -787,10 +938,10 @@ int main(void)
         {
             nrf_pwr_mgmt_run();
         }
-        if(tmp_len != 0)
+        if(tmp_flag != 0)
         {
-            tc_parse(tmp_table, tmp_len);
-            tmp_len = 0;
+            tc_parse(rec_result);
+            tmp_flag = 0;
         }
     }
 }

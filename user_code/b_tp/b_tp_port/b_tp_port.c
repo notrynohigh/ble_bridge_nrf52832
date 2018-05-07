@@ -24,6 +24,7 @@
 #include "b_tp_port.h"
 #include "stdio.h"
 #include "string.h"
+#include "nrf_delay.h"
 /**
  * @addtogroup B_TP
  * @{
