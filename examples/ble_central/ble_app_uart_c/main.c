@@ -94,7 +94,7 @@ NRF_BLE_GATT_DEF(m_gatt);                                               /**< GAT
 BLE_DB_DISCOVERY_DEF(m_db_disc);                                        /**< DB discovery module instance. */
 
 static uint16_t m_ble_nus_max_data_len = BLE_GATT_ATT_MTU_DEFAULT - OPCODE_LENGTH - HANDLE_LENGTH; /**< Maximum length of data (in bytes) that can be transmitted to the peer by the Nordic UART service module. */
-
+static uint8_t connect_flag = 0;
 
 /**@brief Variable length data encapsulation in terms of length and pointer to data. */
 typedef struct
@@ -490,6 +490,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 
         case BLE_GAP_EVT_CONNECTED:
             NRF_LOG_INFO("Connected to target");
+            connect_flag = 0x1;
             err_code = ble_nus_c_handles_assign(&m_ble_nus_c, p_ble_evt->evt.gap_evt.conn_handle, NULL);
             APP_ERROR_CHECK(err_code);
 
@@ -500,7 +501,9 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             err_code = ble_db_discovery_start(&m_db_disc, p_ble_evt->evt.gap_evt.conn_handle);
             APP_ERROR_CHECK(err_code);
             break;
-
+        case BLE_GAP_EVT_DISCONNECTED:
+            connect_flag = 0x0;
+            break;
         case BLE_GAP_EVT_TIMEOUT:
             if (p_gap_evt->params.timeout.src == BLE_GAP_TIMEOUT_SRC_SCAN)
             {
@@ -894,6 +897,25 @@ void tc_scan(uint8_t *pbuf)
     }
 }
 
+void tc_connect(uint8_t *pbuf)
+{
+    uint32_t err_code;
+    ble_gap_addr_t peer_addr;
+    pro_connect_info_t *ptmp = (pro_connect_info_t *)pbuf;
+    if(pbuf == NULL || connect_flag == 0x1)
+    {
+        return;
+    }
+    memcpy(peer_addr.addr, ptmp->addr, 6);
+    peer_addr.addr_id_peer = 0;
+    peer_addr.addr_type = BLE_GAP_ADDR_TYPE_PUBLIC;
+    err_code = sd_ble_gap_connect(&peer_addr,
+                                  &m_scan_params,
+                                  &m_connection_param,
+                                  APP_BLE_CONN_CFG_TAG);
+    APP_ERROR_CHECK(err_code);
+    tc_send(CMD_TOOL_CONNECT, 0, NULL, 0);
+}
 
 void tc_parse(tcmd_pstruct_t result)
 {
@@ -901,6 +923,9 @@ void tc_parse(tcmd_pstruct_t result)
     {
         case CMD_TOOL_SCAN:
             tc_scan(result.pbuf); 
+            break;
+        case CMD_TOOL_CONNECT:
+            tc_connect(result.pbuf);
             break;
         default:
             tc_send(result.cmd, CMD_STATUS_UNKNOWN, NULL, 0);

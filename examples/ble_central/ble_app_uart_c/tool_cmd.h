@@ -46,6 +46,7 @@ extern "C" {
 #define CMD_UPLOAD_SAMPLE       0X54
 
 #define CMD_TOOL_SCAN           0XA0
+#define CMD_TOOL_CONNECT        0XA1
 /**
  * @}
  */
@@ -363,6 +364,14 @@ typedef struct
 {
     uint8_t type;           //  0: stop  1: start
 }pro_scan_require_t;
+
+/** CMD_TOOL_CONNECT */
+
+typedef struct
+{
+    uint8_t addr[6];
+}pro_connect_info_t;
+
 
 #pragma pack()
 
