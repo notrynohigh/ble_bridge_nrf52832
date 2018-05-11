@@ -675,6 +675,10 @@ void tc_connect(uint8_t *pbuf)
     pro_connect_info_t *ptmp = (pro_connect_info_t *)pbuf;
     if(pbuf == NULL || connect_flag == 0x1)
     {
+        if(connect_flag)
+        {
+            tc_send(CMD_TOOL_CONNECT, 0, NULL, 0);
+        }
         return;
     }
     memcpy(peer_addr.addr, ptmp->addr, 6);
@@ -692,7 +696,6 @@ void tc_connect(uint8_t *pbuf)
 void ble_send_port(uint8_t *pbuf, uint32_t len)
 {
     ble_tc_c_send_buf(&m_tc_ble, pbuf, len);
-    //uart_send_buff(pbuf, len);
 }
 
 
