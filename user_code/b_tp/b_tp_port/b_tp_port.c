@@ -37,11 +37,32 @@
 
 extern void uart_send_buff(uint8_t *, uint16_t );
 
+
+
+static pfunc cb_func = uart_send_buff;
+
+
+void reg_port_callback(pfunc p)
+{
+    if(p == NULL)
+    {
+        return;
+    }
+    cb_func = p;
+}
+
+
+void reg_port_cb_reset()
+{
+    cb_func = uart_send_buff;
+}
+
+
 b_tp_err_code_t b_tp_port_send(uint8_t *pbuf, uint32_t len)
 {
     if(len <= 20)
     {
-        uart_send_buff(pbuf, len);
+        cb_func(pbuf, len);
     }
     return B_TP_SUCCESS;
 }

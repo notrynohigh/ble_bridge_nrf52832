@@ -35,10 +35,11 @@
  * @addtogroup B_TP_PORT
  * @{
  */
+typedef void (*pfunc)(uint8_t *, uint32_t);
 
-
+void reg_port_callback(pfunc p);
 b_tp_err_code_t b_tp_port_send(uint8_t *pbuf, uint32_t len);
-
+void reg_port_cb_reset(void);
 
 /**
  * @}

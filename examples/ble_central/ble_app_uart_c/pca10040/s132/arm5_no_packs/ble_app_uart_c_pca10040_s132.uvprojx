@@ -423,6 +423,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\..\tool_cmd.c</FilePath>
             </File>
+            <File>
+              <FileName>tc_ble.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\tc_ble.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -3010,6 +3015,11 @@
               <FileName>tool_cmd.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\..\tool_cmd.c</FilePath>
+            </File>
+            <File>
+              <FileName>tc_ble.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\..\tc_ble.c</FilePath>
             </File>
           </Files>
         </Group>

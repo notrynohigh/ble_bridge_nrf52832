@@ -26,6 +26,10 @@
 
 #include "b_tp_config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @addtogroup B_TP
  * @{
@@ -58,7 +62,9 @@
 typedef enum
 {
     STA_WAIT_HEAD,
-    STA_PACKING,
+    STA_WAIT_SINGLE_PACK,
+    STA_WAIT_MULTI_PACK,
+    STA_CHECK_FNUM,
 }b_tp_status_t;
 
 typedef enum
@@ -94,11 +100,13 @@ typedef struct
 
 typedef struct
 {
-    B_TP_TOTAL_LEN_TYPE   c_packet_number;
-    B_TP_TOTAL_LEN_TYPE   total_len;
-    B_TP_TOTAL_LEN_TYPE   rec_len;
-    b_tp_pack_info_t      *pbuf;
-    b_tp_status_t         status;
+    b_TPU32 expect_number;
+    b_TPU32 remain_len;
+    b_TPS32 data_index;
+    b_tp_status_t  status;
+    b_TPU32 frame_number;
+    B_TP_FRAME_NUMBER_TYPE expect_fnum;
+    b_tp_head_t *phead;   
 }b_tp_rec_info_t;
 
 #pragma pack()
@@ -129,6 +137,10 @@ void _b_tp_send_set_head(b_tp_head_t *);
 /**
  * @}
  */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

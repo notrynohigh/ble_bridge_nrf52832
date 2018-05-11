@@ -81,6 +81,7 @@ void ble_nus_c_on_db_disc_evt(ble_nus_c_t * p_ble_nus_c, ble_db_discovery_evt_t 
                     break;
             }
         }
+        
         if (p_ble_nus_c->evt_handler != NULL)
         {
             nus_c_evt.conn_handle = p_evt->conn_handle;

@@ -55,7 +55,6 @@
 #include "nrf_sdh_soc.h"
 #include "nrf_pwr_mgmt.h"
 #include "ble_advdata.h"
-#include "ble_nus_c.h"
 #include "nrf_ble_gatt.h"
 
 #include "nrf_log.h"
@@ -64,14 +63,15 @@
 
 #include "b_tp.h"
 #include "tool_cmd.h"
+#include "tc_ble.h"
+
+#include "b_tp_port.h"
 
 #define APP_BLE_CONN_CFG_TAG    1                                       /**< A tag that refers to the BLE stack configuration we set with @ref sd_ble_cfg_set. Default tag is @ref BLE_CONN_CFG_TAG_DEFAULT. */
 #define APP_BLE_OBSERVER_PRIO   3                                       /**< Application's BLE observer priority. You shoulnd't need to modify this value. */
 
 #define UART_TX_BUF_SIZE        256                                     /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
-
-#define NUS_SERVICE_UUID_TYPE   BLE_UUID_TYPE_VENDOR_BEGIN              /**< UUID type for the Nordic UART Service (vendor specific). */
 
 #define SCAN_INTERVAL           0x00A0                                  /**< Determines scan interval in units of 0.625 millisecond. */
 #define SCAN_WINDOW             0x0050                                  /**< Determines scan window in units of 0.625 millisecond. */
@@ -88,14 +88,12 @@
 
 #define ECHOBACK_BLE_UART_DATA  1                                       /**< Echo the UART data that is received over the Nordic UART Service back to the sender. */
 
-
-BLE_NUS_C_DEF(m_ble_nus_c);                                             /**< BLE NUS service client instance. */
 NRF_BLE_GATT_DEF(m_gatt);                                               /**< GATT module instance. */
 BLE_DB_DISCOVERY_DEF(m_db_disc);                                        /**< DB discovery module instance. */
+BLE_APPS_DEF(m_tc_ble);
 
-static uint16_t m_ble_nus_max_data_len = BLE_GATT_ATT_MTU_DEFAULT - OPCODE_LENGTH - HANDLE_LENGTH; /**< Maximum length of data (in bytes) that can be transmitted to the peer by the Nordic UART service module. */
 static uint8_t connect_flag = 0;
-
+uint16_t connect_handle = 0;
 /**@brief Variable length data encapsulation in terms of length and pointer to data. */
 typedef struct
 {
@@ -128,14 +126,9 @@ static ble_gap_scan_params_t const m_scan_params =
     #endif
 };
 
-/**@brief NUS uuid. */
-static ble_uuid_t const m_nus_uuid =
-{
-    .uuid = BLE_UUID_NUS_SERVICE,
-    .type = NUS_SERVICE_UUID_TYPE
-};
 
-
+void uart_send_buff(uint8_t *pbuf, uint16_t len);
+void uart_send_string(uint8_t *);
 /**@brief Function for asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -184,54 +177,12 @@ static void scan_stop(void)
  *
  * @param[in] p_event  Pointer to the database discovery event.
  */
+
 static void db_disc_handler(ble_db_discovery_evt_t * p_evt)
 {
-    ble_nus_c_on_db_disc_evt(&m_ble_nus_c, p_evt);
+    ble_tc_c_on_db_disc_evt(&m_tc_ble, p_evt);
 }
 
-
-/**@brief Function for handling characters received by the Nordic UART Service.
- *
- * @details This function takes a list of characters of length data_len and prints the characters out on UART.
- *          If @ref ECHOBACK_BLE_UART_DATA is set, the data is sent back to sender.
- */
-static void ble_nus_chars_received_uart_print(uint8_t * p_data, uint16_t data_len)
-{
-    ret_code_t ret_val;
-
-    NRF_LOG_DEBUG("Receiving data.");
-    NRF_LOG_HEXDUMP_DEBUG(p_data, data_len);
-
-    for (uint32_t i = 0; i < data_len; i++)
-    {
-        do
-        {
-            ret_val = app_uart_put(p_data[i]);
-            if ((ret_val != NRF_SUCCESS) && (ret_val != NRF_ERROR_BUSY))
-            {
-                NRF_LOG_ERROR("app_uart_put failed for index 0x%04x.", i);
-                APP_ERROR_CHECK(ret_val);
-            }
-        } while (ret_val == NRF_ERROR_BUSY);
-    }
-    if (p_data[data_len-1] == '\r')
-    {
-        while (app_uart_put('\n') == NRF_ERROR_BUSY);
-    }
-    if (ECHOBACK_BLE_UART_DATA)
-    {
-        // Send data back to peripheral.
-        do
-        {
-            ret_val = ble_nus_c_string_send(&m_ble_nus_c, p_data, data_len);
-            if ((ret_val != NRF_SUCCESS) && (ret_val != NRF_ERROR_BUSY))
-            {
-                NRF_LOG_ERROR("Failed sending NUS message. Error 0x%x. ", ret_val);
-                APP_ERROR_CHECK(ret_val);
-            }
-        } while (ret_val == NRF_ERROR_BUSY);
-    }
-}
 
 
 /**@brief   Function for handling app_uart events.
@@ -266,41 +217,7 @@ void uart_event_handle(app_uart_evt_t * p_event)
 }
 
 
-/**@brief Callback handling NUS Client events.
- *
- * @details This function is called to notify the application of NUS client events.
- *
- * @param[in]   p_ble_nus_c   NUS Client Handle. This identifies the NUS client
- * @param[in]   p_ble_nus_evt Pointer to the NUS Client event.
- */
 
-/**@snippet [Handling events from the ble_nus_c module] */
-static void ble_nus_c_evt_handler(ble_nus_c_t * p_ble_nus_c, ble_nus_c_evt_t const * p_ble_nus_evt)
-{
-    ret_code_t err_code;
-
-    switch (p_ble_nus_evt->evt_type)
-    {
-        case BLE_NUS_C_EVT_DISCOVERY_COMPLETE:
-            NRF_LOG_INFO("Discovery complete.");
-            err_code = ble_nus_c_handles_assign(p_ble_nus_c, p_ble_nus_evt->conn_handle, &p_ble_nus_evt->handles);
-            APP_ERROR_CHECK(err_code);
-
-            err_code = ble_nus_c_tx_notif_enable(p_ble_nus_c);
-            APP_ERROR_CHECK(err_code);
-            NRF_LOG_INFO("Connected to device with Nordic UART Service.");
-            break;
-
-        case BLE_NUS_C_EVT_NUS_TX_EVT:
-            ble_nus_chars_received_uart_print(p_ble_nus_evt->p_data, p_ble_nus_evt->data_len);
-            break;
-
-        case BLE_NUS_C_EVT_DISCONNECTED:
-            NRF_LOG_INFO("Disconnected.");
-            scan_start();
-            break;
-    }
-}
 /**@snippet [Handling events from the ble_nus_c module] */
 
 
@@ -332,86 +249,6 @@ static bool shutdown_handler(nrf_pwr_mgmt_evt_t event)
 }
 
 NRF_PWR_MGMT_HANDLER_REGISTER(shutdown_handler, APP_SHUTDOWN_HANDLER_PRIORITY);
-
-/**@brief Reads an advertising report and checks if a UUID is present in the service list.
- *
- * @details The function is able to search for 16-bit, 32-bit and 128-bit service UUIDs.
- *          To see the format of a advertisement packet, see
- *          https://www.bluetooth.org/Technical/AssignedNumbers/generic_access_profile.htm
- *
- * @param[in]   p_target_uuid The UUID to search for.
- * @param[in]   p_adv_report  Pointer to the advertisement report.
- *
- * @retval      true if the UUID is present in the advertisement report. Otherwise false
- */
-static bool is_uuid_present(ble_uuid_t               const * p_target_uuid,
-                            ble_gap_evt_adv_report_t const * p_adv_report)
-{
-    ret_code_t   err_code;
-    ble_uuid_t   extracted_uuid;
-    uint16_t     index  = 0;
-    uint8_t    * p_data = (uint8_t *)p_adv_report->data;
-
-    while (index < p_adv_report->dlen)
-    {
-        uint8_t field_length = p_data[index];
-        uint8_t field_type   = p_data[index + 1];
-
-        if (   (field_type == BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_MORE_AVAILABLE)
-            || (field_type == BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_COMPLETE))
-        {
-            for (uint32_t i = 0; i < (field_length / UUID16_SIZE); i++)
-            {
-                err_code = sd_ble_uuid_decode(UUID16_SIZE,
-                                              &p_data[i * UUID16_SIZE + index + 2],
-                                              &extracted_uuid);
-
-                if (err_code == NRF_SUCCESS)
-                {
-                    if (extracted_uuid.uuid == p_target_uuid->uuid)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        else if (   (field_type == BLE_GAP_AD_TYPE_32BIT_SERVICE_UUID_MORE_AVAILABLE)
-                 || (field_type == BLE_GAP_AD_TYPE_32BIT_SERVICE_UUID_COMPLETE))
-        {
-            for (uint32_t i = 0; i < (field_length / UUID32_SIZE); i++)
-            {
-                err_code = sd_ble_uuid_decode(UUID32_SIZE,
-                                              &p_data[i * UUID32_SIZE + index + 2],
-                                              &extracted_uuid);
-
-                if (err_code == NRF_SUCCESS)
-                {
-                    if (   (extracted_uuid.uuid == p_target_uuid->uuid)
-                        && (extracted_uuid.type == p_target_uuid->type))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        else if (   (field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_MORE_AVAILABLE)
-                 || (field_type == BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE))
-        {
-            err_code = sd_ble_uuid_decode(UUID128_SIZE, &p_data[index + 2], &extracted_uuid);
-            if (err_code == NRF_SUCCESS)
-            {
-                if (   (extracted_uuid.uuid == p_target_uuid->uuid)
-                    && (extracted_uuid.type == p_target_uuid->type))
-                {
-                    return true;
-                }
-            }
-        }
-        index += field_length + 1;
-    }
-    return false;
-}
 
 /**
  * @brief Parses advertisement data, providing length and location of the field in case
@@ -475,13 +312,15 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             adv_data.data_len = p_gap_evt->params.adv_report.dlen;
 
             // Search for advertising names.
-            bool name_found = false;
-            err_code = adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, &adv_data, &dev_name);            
+            err_code = adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, &adv_data, &dev_name);     
+            
             if(err_code == NRF_ERROR_NOT_FOUND)
             {
                 break;
             }
             scan_resp.rssi = p_adv_report->rssi;
+            
+//            uart_send_buff((uint8_t *)&(p_adv_report->peer_addr), sizeof(p_adv_report->peer_addr));
             memcpy(scan_resp.addr, p_adv_report->peer_addr.addr, sizeof(scan_resp.addr));
             memcpy(scan_resp.name, dev_name.p_data, (dev_name.data_len > DEVICE_NAME_MAX_LEN) ? DEVICE_NAME_MAX_LEN : dev_name.data_len);
             tc_send(CMD_TOOL_SCAN, 0, (uint8_t *)&scan_resp, sizeof(pro_scan_response_t));
@@ -490,16 +329,10 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 
         case BLE_GAP_EVT_CONNECTED:
             NRF_LOG_INFO("Connected to target");
-            connect_flag = 0x1;
-            err_code = ble_nus_c_handles_assign(&m_ble_nus_c, p_ble_evt->evt.gap_evt.conn_handle, NULL);
-            APP_ERROR_CHECK(err_code);
-
-            err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
-            APP_ERROR_CHECK(err_code);
-
-            // start discovery of services. The NUS Client waits for a discovery result
             err_code = ble_db_discovery_start(&m_db_disc, p_ble_evt->evt.gap_evt.conn_handle);
             APP_ERROR_CHECK(err_code);
+        
+            connect_flag = 0x1;
             break;
         case BLE_GAP_EVT_DISCONNECTED:
             connect_flag = 0x0;
@@ -598,8 +431,6 @@ void gatt_evt_handler(nrf_ble_gatt_t * p_gatt, nrf_ble_gatt_evt_t const * p_evt)
     {
         NRF_LOG_INFO("ATT MTU exchange completed.");
 
-        m_ble_nus_max_data_len = p_evt->params.att_mtu_effective - OPCODE_LENGTH - HANDLE_LENGTH;
-        NRF_LOG_INFO("Ble NUS max data length set to 0x%X(%d)", m_ble_nus_max_data_len, m_ble_nus_max_data_len);
     }
 }
 
@@ -621,29 +452,6 @@ void gatt_init(void)
  *
  * @param[in] event  Event generated by button press.
  */
-void bsp_event_handler(bsp_event_t event)
-{
-    ret_code_t err_code;
-
-    switch (event)
-    {
-        case BSP_EVENT_SLEEP:
-            nrf_pwr_mgmt_shutdown(NRF_PWR_MGMT_SHUTDOWN_GOTO_SYSOFF);
-            break;
-
-        case BSP_EVENT_DISCONNECT:
-            err_code = sd_ble_gap_disconnect(m_ble_nus_c.conn_handle,
-                                             BLE_HCI_REMOTE_USER_TERMINATED_CONNECTION);
-            if (err_code != NRF_ERROR_INVALID_STATE)
-            {
-                APP_ERROR_CHECK(err_code);
-            }
-            break;
-
-        default:
-            break;
-    }
-}
 
 /**@brief Function for initializing the UART. */
 static void uart_init(void)
@@ -671,30 +479,12 @@ static void uart_init(void)
     APP_ERROR_CHECK(err_code);
 }
 
-/**@brief Function for initializing the NUS Client. */
-static void nus_c_init(void)
-{
-    ret_code_t       err_code;
-    ble_nus_c_init_t init;
-
-    init.evt_handler = ble_nus_c_evt_handler;
-
-    err_code = ble_nus_c_init(&m_ble_nus_c, &init);
-    APP_ERROR_CHECK(err_code);
-}
 
 
 /**@brief Function for initializing buttons and leds. */
 static void buttons_leds_init(void)
 {
-    ret_code_t err_code;
-    bsp_event_t startup_event;
 
-    err_code = bsp_init(BSP_INIT_LED, bsp_event_handler);
-    APP_ERROR_CHECK(err_code);
-
-    err_code = bsp_btn_ble_init(NULL, &startup_event);
-    APP_ERROR_CHECK(err_code);
 }
 
 
@@ -791,31 +581,10 @@ static uint8_t urx_table[UART_RX_LEN];
 static void _timer_20ms_handler(void *parg)
 {
     uint16_t len = 0;
-    uint32_t i = 0;
-    static uint16_t s_len = 0;
-    len = uart_rec_buff(&urx_table[s_len], UART_RX_LEN - s_len);
+    len = uart_rec_buff(urx_table, UART_RX_LEN);
     if(len > 0)
     {
-        s_len += len;
-    }
-    else if(s_len > 0)
-    {   
-        if(s_len <= B_TP_MTU)
-        {
-            b_tp_receive_data(urx_table, s_len);
-        }
-        else
-        {
-            for(i = 0;i < (s_len / B_TP_MTU); i++)
-            {
-                b_tp_receive_data(&urx_table[i * B_TP_MTU], B_TP_MTU);
-            }
-            if(s_len % B_TP_MTU)
-            {
-                b_tp_receive_data(&urx_table[i * B_TP_MTU], (s_len % B_TP_MTU));
-            }
-        }        
-        s_len = 0;
+        b_tp_receive_data(urx_table, len);
     }
     uint32_t err_code = app_timer_start(utimer_20ms_id, UTIMER_20MS_INTERVAL, NULL);
     APP_ERROR_CHECK(err_code);    
@@ -844,6 +613,7 @@ static void user_timer_start()
 
 uint8_t tmp_table[256];
 uint8_t tmp_flag = 0;
+uint8_t tmp_buf_len = 0;
 tcmd_pstruct_t rec_result;
 
 
@@ -858,6 +628,7 @@ void b_tp_callback(b_TPU8 *pbuf, b_TPU32 len)
     rec_result.cmd = ptmp->cmd;
     rec_result.status = ptmp->status;
     memcpy(tmp_table, ptmp->buf, len - off);
+    tmp_buf_len = len - off;
     if(len == off)
     {
         rec_result.pbuf = NULL;
@@ -908,7 +679,7 @@ void tc_connect(uint8_t *pbuf)
     }
     memcpy(peer_addr.addr, ptmp->addr, 6);
     peer_addr.addr_id_peer = 0;
-    peer_addr.addr_type = BLE_GAP_ADDR_TYPE_PUBLIC;
+    peer_addr.addr_type = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
     err_code = sd_ble_gap_connect(&peer_addr,
                                   &m_scan_params,
                                   &m_connection_param,
@@ -916,6 +687,22 @@ void tc_connect(uint8_t *pbuf)
     APP_ERROR_CHECK(err_code);
     tc_send(CMD_TOOL_CONNECT, 0, NULL, 0);
 }
+
+
+void ble_send_port(uint8_t *pbuf, uint32_t len)
+{
+    ble_tc_c_send_buf(&m_tc_ble, pbuf, len);
+    //uart_send_buff(pbuf, len);
+}
+
+
+void tc_bridge(tcmd_pstruct_t result)
+{
+    reg_port_callback(ble_send_port);
+    tc_send(result.cmd, 0, result.pbuf, tmp_buf_len);
+    reg_port_cb_reset();
+}
+
 
 void tc_parse(tcmd_pstruct_t result)
 {
@@ -928,7 +715,7 @@ void tc_parse(tcmd_pstruct_t result)
             tc_connect(result.pbuf);
             break;
         default:
-            tc_send(result.cmd, CMD_STATUS_UNKNOWN, NULL, 0);
+            tc_bridge(result);
             break;
     }
 }
@@ -948,7 +735,7 @@ int main(void)
     db_discovery_init();
     ble_stack_init();
     gatt_init();
-//    nus_c_init();
+    tc_ble_init(&m_tc_ble);
     
     // Start scanning for peripherals and initiate connection
     // with devices that advertise NUS UUID.
@@ -956,7 +743,7 @@ int main(void)
 //    NRF_LOG_INFO("BLE UART central example started.");
 //    scan_start();
     user_timer_start();
-    uart_send_string((uint8_t *)"hello world");
+    //uart_send_string((uint8_t *)"hello world");
     for (;;)
     {
         if (NRF_LOG_PROCESS() == false)
