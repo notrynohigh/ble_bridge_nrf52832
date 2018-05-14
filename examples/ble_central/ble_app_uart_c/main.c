@@ -334,6 +334,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             APP_ERROR_CHECK(err_code);
         
             connect_flag = 0x1;
+            tc_get_conn_status();
             break;
         case BLE_GAP_EVT_DISCONNECTED:
             connect_flag = 0x0;
