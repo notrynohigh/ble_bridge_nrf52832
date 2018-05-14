@@ -129,6 +129,7 @@ static ble_gap_scan_params_t const m_scan_params =
 
 void uart_send_buff(uint8_t *pbuf, uint16_t len);
 void uart_send_string(uint8_t *);
+void tc_get_conn_status(void);
 /**@brief Function for asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -336,6 +337,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             break;
         case BLE_GAP_EVT_DISCONNECTED:
             connect_flag = 0x0;
+            tc_get_conn_status();
             break;
         case BLE_GAP_EVT_TIMEOUT:
             if (p_gap_evt->params.timeout.src == BLE_GAP_TIMEOUT_SRC_SCAN)
@@ -706,6 +708,12 @@ void tc_bridge(tcmd_pstruct_t result)
     reg_port_cb_reset();
 }
 
+void tc_get_conn_status()
+{
+    pro_conn_sta_t tmp;
+    tmp.status = connect_flag;
+    tc_send(CMD_TOOL_CONN_STA, 0, (uint8_t *)&tmp, sizeof(pro_conn_sta_t));
+}
 
 void tc_parse(tcmd_pstruct_t result)
 {
@@ -716,6 +724,9 @@ void tc_parse(tcmd_pstruct_t result)
             break;
         case CMD_TOOL_CONNECT:
             tc_connect(result.pbuf);
+            break;
+        case CMD_TOOL_CONN_STA:
+            tc_get_conn_status();
             break;
         default:
             tc_bridge(result);
