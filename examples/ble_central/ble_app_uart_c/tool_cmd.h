@@ -185,7 +185,7 @@ typedef struct
     uint16_t fast_walk_step;
     uint16_t run_step;
     uint16_t inside_step;
-    uint16_t outside_setp;
+    uint16_t outside_step;
     uint16_t normal_step;
 }pro_walk_info_t;
 
@@ -206,12 +206,12 @@ typedef struct
     uint8_t  hour;
     uint8_t  minute;
     uint8_t  run_step;
-    uint8_t  forefoot_setp;
-    uint8_t  midfoot_setp;
-    uint8_t  backfoot_setp;
-    uint8_t  inside_setp;
-    uint8_t  normal_setp;
-    uint8_t  outside_setp;
+    uint8_t  forefoot_step;
+    uint8_t  midfoot_step;
+    uint8_t  backfoot_step;
+    uint8_t  inside_step;
+    uint8_t  normal_step;
+    uint8_t  outside_step;
     uint16_t height_cm;
     uint16_t force_g;
     uint16_t land_time_ms;
