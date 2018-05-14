@@ -702,7 +702,7 @@ void ble_send_port(uint8_t *pbuf, uint32_t len)
 void tc_bridge(tcmd_pstruct_t result)
 {
     reg_port_callback(ble_send_port);
-    tc_send(result.cmd, 0, result.pbuf, tmp_buf_len);
+    tc_send(result.cmd, result.status, result.pbuf, tmp_buf_len);
     reg_port_cb_reset();
 }
 
