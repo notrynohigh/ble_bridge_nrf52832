@@ -2,7 +2,7 @@
  ****************************************************************************
  * MIT License
  * @file b_tp.c  
- * @version v1.1.1
+ * @version v2.0.1
  * Copyright (c) [2018-2019] [Bean  email: notrynohigh@outlook.com]
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -41,8 +41,7 @@
 #endif
 
 
-static b_TPU8 sg_b_tp_send_buf[B_TP_STATIC_SEND_BUF_LEN];
-static b_TPU8 sg_b_tp_rec_buf[B_TP_STATIC_REC_BUF_LEN];
+static b_TPU8 sg_b_tp_buf[B_TP_STATIC_BUF_LEN];
 
 
 typedef enum
@@ -51,7 +50,7 @@ typedef enum
     B_TP_LOCK
 }b_tp_lock_t;
 
-static b_tp_lock_t sg_send_lock_flag = B_TP_UNLOCK;
+static b_tp_lock_t sg_lock_flag = B_TP_UNLOCK;
 
 /**
  * @addtogroup B_TP
@@ -86,19 +85,17 @@ WEAK_FUNC void _b_tp_send_set_head(b_tp_head_t *phead)
 
 static void _b_tp_send_lock()
 {
-#if B_TP_SEND_LOCK_ENABLE
-    sg_send_lock_flag = B_TP_LOCK;
-#endif
+    sg_lock_flag = B_TP_LOCK;
 }
 
 static void _b_tp_send_unlock()
 {
-    sg_send_lock_flag = B_TP_UNLOCK;
+    sg_lock_flag = B_TP_UNLOCK;
 }
 
 static b_tp_lock_t _b_tp_send_get_lock()
 {
-    return sg_send_lock_flag;
+    return sg_lock_flag;
 }
  
 static b_tp_err_code_t _b_tp_check_data(b_tp_pack_info_t *pb_tp_pack_info)
@@ -277,7 +274,7 @@ b_tp_err_code_t b_tp_receive_data(b_TPU8 *pbuf, b_TPU32 len)
         {
             if(gs_tp_rec_info.expect_number > 0)
             {
-                sg_b_tp_rec_buf[gs_tp_rec_info.data_index++] = pbuf[i];
+                sg_b_tp_buf[gs_tp_rec_info.data_index++] = pbuf[i];
                 gs_tp_rec_info.expect_number--;
             }
             
@@ -286,7 +283,7 @@ b_tp_err_code_t b_tp_receive_data(b_TPU8 *pbuf, b_TPU32 len)
                 switch(gs_tp_rec_info.status)
                 {
                     case STA_WAIT_HEAD: 
-                        gs_tp_rec_info.phead = (b_tp_head_t *)sg_b_tp_rec_buf;
+                        gs_tp_rec_info.phead = (b_tp_head_t *)sg_b_tp_buf;
                         if(B_TP_SUCCESS != _b_tp_rec_check_head(gs_tp_rec_info.phead))
                         {
                             _b_tp_reset_rec_info();
@@ -312,7 +309,7 @@ b_tp_err_code_t b_tp_receive_data(b_TPU8 *pbuf, b_TPU32 len)
                         }
                         break;
                     case STA_WAIT_SINGLE_PACK:
-                        pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_rec_buf;
+                        pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_buf;
                         if(B_TP_SUCCESS == _b_tp_check_data(pb_tp_pack_info))
                         {
                             gps_rec_success_cb(pb_tp_pack_info->buf, pb_tp_pack_info->head.total_len);
@@ -325,7 +322,7 @@ b_tp_err_code_t b_tp_receive_data(b_TPU8 *pbuf, b_TPU32 len)
                         {
                             if(gs_tp_rec_info.frame_number == (gs_tp_rec_info.expect_fnum - 1))
                             {
-                                pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_rec_buf;
+                                pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_buf;
                                 if(B_TP_SUCCESS == _b_tp_check_data(pb_tp_pack_info))
                                 {
                                     gps_rec_success_cb(pb_tp_pack_info->buf, pb_tp_pack_info->head.total_len);
@@ -342,7 +339,7 @@ b_tp_err_code_t b_tp_receive_data(b_TPU8 *pbuf, b_TPU32 len)
                         break;
                     case STA_CHECK_FNUM:
                         gs_tp_rec_info.data_index = gs_tp_rec_info.data_index - sizeof(B_TP_FRAME_NUMBER_TYPE);
-                        if(((B_TP_FRAME_NUMBER_TYPE *)(&(sg_b_tp_rec_buf[gs_tp_rec_info.data_index])))[0] == gs_tp_rec_info.expect_fnum)
+                        if(((B_TP_FRAME_NUMBER_TYPE *)(&(sg_b_tp_buf[gs_tp_rec_info.data_index])))[0] == gs_tp_rec_info.expect_fnum)
                         {
                             gs_tp_rec_info.expect_fnum++;
                             if(gs_tp_rec_info.remain_len >= (B_TP_MTU - sizeof(B_TP_FRAME_NUMBER_TYPE)))
@@ -381,7 +378,7 @@ b_tp_err_code_t b_tp_send_data(b_TPU8 *pbuf, b_TPU32 len)
         return B_TP_PARAM_ERR;
     }
 
-    pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_send_buf;
+    pb_tp_pack_info = (b_tp_pack_info_t *)sg_b_tp_buf;
     
     _b_tp_send_set_head(&(pb_tp_pack_info->head));
     pb_tp_pack_info->head.head = B_TP_HEAD;
