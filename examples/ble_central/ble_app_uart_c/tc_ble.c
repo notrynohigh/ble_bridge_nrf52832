@@ -112,7 +112,7 @@ uint32_t ble_tc_c_tx_notif_enable(ble_apps_t * p_ble_tc_c)
 }
 
 
-
+extern void tc_could_read_write(void);
 void ble_tc_c_on_db_disc_evt(ble_apps_t * p_ble_tc_c, ble_db_discovery_evt_t * p_evt)
 {
     ble_apps_t tc_c_evt;
@@ -147,8 +147,7 @@ void ble_tc_c_on_db_disc_evt(ble_apps_t * p_ble_tc_c, ble_db_discovery_evt_t * p
         p_ble_tc_c->app_notify_ccc_handle = tc_c_evt.app_notify_ccc_handle;
 
         ble_tc_c_tx_notif_enable(p_ble_tc_c);
-        uint8_t tip_table[3] = {0, 1, 2};
-        uart_send_buff(tip_table, 3);
+        tc_could_read_write();
     }
 }
 

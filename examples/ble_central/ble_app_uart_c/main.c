@@ -735,7 +735,11 @@ void tc_parse(tcmd_pstruct_t result)
     }
 }
 
-
+void tc_could_read_write()
+{
+    connect_flag = 0x2;
+    tc_get_conn_status();
+}
 
 /*************************************************************************************/
 int main(void)
