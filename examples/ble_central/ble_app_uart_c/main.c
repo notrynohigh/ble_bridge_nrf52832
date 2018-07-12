@@ -348,6 +348,8 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             }
             else if (p_gap_evt->params.timeout.src == BLE_GAP_TIMEOUT_SRC_CONN)
             {
+                connect_flag = 0x0;
+                tc_get_conn_status();
                 NRF_LOG_INFO("Connection Request timed out.");
             }
             break;
