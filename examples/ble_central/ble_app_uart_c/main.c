@@ -73,7 +73,7 @@
 #define UART_TX_BUF_SIZE        256                                     /**< UART TX buffer size. */
 #define UART_RX_BUF_SIZE        256                                     /**< UART RX buffer size. */
 
-#define SCAN_INTERVAL           0x00A0                                  /**< Determines scan interval in units of 0.625 millisecond. */
+#define SCAN_INTERVAL           0x0050                                  /**< Determines scan interval in units of 0.625 millisecond. */
 #define SCAN_WINDOW             0x0050                                  /**< Determines scan window in units of 0.625 millisecond. */
 #define SCAN_TIMEOUT            0x0000                                  /**< Timout when scanning. 0x0000 disables timeout. */
 
