@@ -582,7 +582,8 @@ APP_TIMER_DEF(utimer_20ms_id);
 #define UART_RX_LEN         256
 static uint8_t urx_table[UART_RX_LEN];
 #define UTIMER_20MS_INTERVAL    APP_TIMER_TICKS(20)
-
+static uint32_t connect_timeout = 0;
+static uint8_t timeout_start = 0;
 static void _timer_20ms_handler(void *parg)
 {
     uint16_t len = 0;
@@ -590,6 +591,19 @@ static void _timer_20ms_handler(void *parg)
     if(len > 0)
     {
         b_tp_receive_data(urx_table, len);
+    }
+    if(timeout_start == 0x1)
+    {
+        connect_timeout++;
+        if(connect_timeout > 500)
+        {
+            sd_ble_gap_connect_cancel();
+            timeout_start = 0;
+        }
+    }
+    else 
+    {
+        connect_timeout = 0;
     }
     uint32_t err_code = app_timer_start(utimer_20ms_id, UTIMER_20MS_INTERVAL, NULL);
     APP_ERROR_CHECK(err_code);    
@@ -678,7 +692,7 @@ void tc_connect(uint8_t *pbuf)
     uint32_t err_code;
     ble_gap_addr_t peer_addr;
     pro_connect_info_t *ptmp = (pro_connect_info_t *)pbuf;
-    if(pbuf == NULL || connect_flag == 0x1)
+    if(pbuf == NULL || connect_flag != 0x0)
     {
         if(connect_flag)
         {
@@ -727,6 +741,7 @@ void tc_parse(tcmd_pstruct_t result)
             break;
         case CMD_TOOL_CONNECT:
             tc_connect(result.pbuf);
+            timeout_start = 0x1;
             break;
         case CMD_TOOL_CONN_STA:
             tc_get_conn_status();
@@ -760,9 +775,9 @@ int main(void)
     
     // Start scanning for peripherals and initiate connection
     // with devices that advertise NUS UUID.
-//    printf("BLE UART central example started.\r\n");
-//    NRF_LOG_INFO("BLE UART central example started.");
-//    scan_start();
+    //    printf("BLE UART central example started.\r\n");
+    //    NRF_LOG_INFO("BLE UART central example started.");
+    //    scan_start();
     user_timer_start();
     //uart_send_string((uint8_t *)"hello world");
     for (;;)
